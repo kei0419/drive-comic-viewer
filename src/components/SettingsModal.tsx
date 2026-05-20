@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, Sun, Moon, Info } from 'lucide-react';
+import { X, Save, Sun, Moon, Info, RefreshCw } from 'lucide-react';
 import { getSettings, saveSettings } from '../utils/db';
 import styles from '../styles/SettingsModal.module.css';
 
@@ -16,6 +16,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const [clientId, setClientId] = useState('');
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+  const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -33,6 +34,39 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     document.documentElement.setAttribute('data-theme', theme);
     onSettingsSaved();
     onClose();
+  };
+
+  // アプリケーションのアセットキャッシュとサービスワーカーを完全にクリアして再読み込み
+  const handleForceUpdate = async () => {
+    if (!window.confirm('アプリを最新バージョンに更新し、再起動しますか？\n(ダウンロードしたマンガのデータは消えません)')) {
+      return;
+    }
+    
+    setIsUpdating(true);
+    try {
+      // 1. すべてのサービスワーカー登録を解除
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const registration of registrations) {
+          await registration.unregister();
+        }
+      }
+
+      // 2. ブラウザのアセットキャッシュストレージ（Cache API）をクリア
+      if ('caches' in window) {
+        const cacheNames = await caches.keys();
+        for (const cacheName of cacheNames) {
+          await caches.delete(cacheName);
+        }
+      }
+
+      // 3. ページをサーバーから強制再読み込み
+      window.location.reload();
+    } catch (err) {
+      console.error('Failed to update app:', err);
+      alert('更新に失敗しました。時間をおいて再度お試しください。');
+      setIsUpdating(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -89,6 +123,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 ダークモード
               </button>
             </div>
+          </div>
+
+          <div className={styles.formGroup} style={{ marginTop: '12px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '20px' }}>
+            <label className={styles.label}>システム管理</label>
+            <button
+              type="button"
+              className="btn-secondary"
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px' }}
+              onClick={handleForceUpdate}
+              disabled={isUpdating}
+            >
+              <RefreshCw size={16} className={isUpdating ? 'spin' : ''} />
+              {isUpdating ? '更新中...' : 'アプリのキャッシュをクリアして再起動'}
+            </button>
           </div>
 
           <footer className={styles.footer}>
