@@ -251,22 +251,29 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
       return [currentPage];
     }
     
+    let currentSpread: number[] = [];
     if (isSpreadOffset) {
       // 偶数（表紙0を含む）からペアにする
       if (currentPage % 2 === 0) {
-        return [currentPage, currentPage + 1].filter(p => p < totalLength);
+        currentSpread = [currentPage, currentPage + 1].filter(p => p < totalLength);
       } else {
-        return [currentPage - 1, currentPage].filter(p => p < totalLength);
+        currentSpread = [currentPage - 1, currentPage].filter(p => p < totalLength);
       }
     } else {
       // 通常：0（表紙）は単独、1以降は奇数からペアにする
       if (currentPage === 0) return [0];
       if (currentPage % 2 === 1) {
-        return [currentPage, currentPage + 1].filter(p => p < totalLength);
+        currentSpread = [currentPage, currentPage + 1].filter(p => p < totalLength);
       } else {
-        return [currentPage - 1, currentPage].filter(p => p < totalLength);
+        currentSpread = [currentPage - 1, currentPage].filter(p => p < totalLength);
       }
     }
+
+    // 右開き(RTL)の場合は、右側に若いページ（インデックスが小さい方）を表示するため、配列を左右反転する
+    if (direction === 'rtl') {
+      return [...currentSpread].reverse();
+    }
+    return currentSpread;
   };
 
   // ページめくり
