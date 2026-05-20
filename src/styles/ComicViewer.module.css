@@ -1,0 +1,384 @@
+/* ComicViewer.module.css */
+.container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  height: -webkit-fill-available;
+  background: #000;
+  color: #fff;
+  z-index: 100;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ローディング画面 */
+.loadingContainer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: radial-gradient(circle at 50% 0%, #110e25 0%, #05040e 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: 20px;
+}
+
+.loadingCard {
+  width: 100%;
+  max-width: 400px;
+  padding: 32px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+.progressWrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+}
+
+.statusText {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.progressInfo {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.progressTrack {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-color), #ec4899);
+  transition: width 0.1s ease;
+}
+
+.progressPercent {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.errorWrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  align-items: center;
+}
+
+.errorText {
+  color: #ef4444;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.errorActions {
+  display: flex;
+  gap: 12px;
+}
+
+/* ビューポート（閲覧領域） */
+.viewport {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* スライドモード */
+.spreadWrapper {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+}
+
+.pageContainer {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  max-width: 100%;
+}
+
+.pageImage {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* 縦スクロールモード */
+.verticalMode {
+  overflow-y: auto !important;
+  display: block;
+}
+
+.scrollWrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  padding-bottom: 80px; /* メニュー分のマージン */
+}
+
+.scrollImage {
+  max-width: 100%;
+  width: auto;
+  height: auto;
+  display: block;
+  user-select: none;
+  -webkit-user-drag: none;
+  background: #000;
+}
+
+/* ヘッダーメニュー */
+.header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  background: rgba(15, 12, 33, 0.7) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0;
+  z-index: 110;
+  transform: translateY(-100%);
+  transition: transform var(--transition-speed) ease;
+}
+
+.header.show {
+  transform: translateY(0);
+}
+
+.backBtn {
+  background: transparent;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition-speed) ease;
+}
+
+.backBtn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 70%;
+  text-align: center;
+}
+
+/* フッター操作バー */
+.footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  background: rgba(15, 12, 33, 0.7) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0;
+  z-index: 110;
+  transform: translateY(100%);
+  transition: transform var(--transition-speed) ease;
+  padding: 16px 20px;
+}
+
+.footer.show {
+  transform: translateY(0);
+}
+
+.footerControls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  max-width: 900px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.pageIndicator {
+  font-size: 0.8rem;
+  color: #a3a1be;
+  min-width: 80px;
+  text-align: center;
+  font-weight: 500;
+}
+
+.sliderWrapper {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.seekBar {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  outline: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+.seekBar::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent-color);
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
+  transition: transform 0.1s ease;
+}
+
+.seekBar::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.settingsBtn {
+  background: transparent;
+  border: none;
+  color: #a3a1be;
+  cursor: pointer;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-speed) ease;
+}
+
+.settingsBtn:hover, .activeBtn {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* 設定パネル */
+.settingsPanel {
+  position: fixed;
+  bottom: 85px;
+  right: 20px;
+  width: 320px;
+  padding: 20px;
+  background: rgba(15, 12, 33, 0.85) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  z-index: 120;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  opacity: 0;
+  transform: translateY(10px);
+  pointer-events: none;
+  transition: all var(--transition-speed) ease;
+}
+
+.settingsPanel.show {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.settingsTitle {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #fff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 8px;
+}
+
+.settingGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settingLabel {
+  font-size: 0.78rem;
+  color: #a3a1be;
+}
+
+.settingOptions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.optionBtn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  color: #a3a1be;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-family: var(--font-family);
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: all var(--transition-speed) ease;
+}
+
+.optionBtn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.optionBtn.active {
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+  color: #fff;
+}
+
+/* レスポンシブ調整 */
+@media (max-width: 600px) {
+  .settingsPanel {
+    width: calc(100% - 40px);
+    left: 20px;
+    right: 20px;
+    bottom: 85px;
+  }
+}

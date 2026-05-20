@@ -1,0 +1,456 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: -webkit-fill-available;
+  padding: 16px;
+  gap: 16px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  height: 64px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo {
+  font-size: 1.6rem;
+}
+
+.brandName {
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+
+.headerActions {
+  display: flex;
+  gap: 8px;
+}
+
+.iconBtn {
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-speed) ease;
+}
+
+.iconBtn:hover {
+  background: var(--panel-border);
+  color: var(--accent-color);
+  transform: scale(1.05);
+}
+
+.iconBtn.logout:hover {
+  color: var(--danger-color);
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  gap: 16px;
+}
+
+.sidebar {
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.sideCard {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.sectionTitle {
+  font-size: 0.9rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+}
+
+.titleIcon {
+  color: var(--accent-color);
+}
+
+.titleIconFav {
+  color: #fbbf24;
+}
+
+.emptyText {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 8px 0;
+}
+
+/* 最近読んだ本 */
+.historyGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.historyCard {
+  display: flex;
+  gap: 10px;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 8px;
+  transition: background var(--transition-speed) ease;
+}
+
+.historyCard:hover {
+  background: var(--panel-border);
+}
+
+.thumbnailWrapper {
+  width: 48px;
+  height: 64px;
+  border-radius: 6px;
+  overflow: hidden;
+  position: relative;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--panel-border);
+  flex-shrink: 0;
+}
+
+.thumbnail {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.thumbnailPlaceholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.historyProgress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 4px;
+  background: var(--progress-bg);
+}
+
+.progressBar {
+  height: 100%;
+  background: var(--progress-fill);
+}
+
+.historyInfo {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  flex: 1;
+}
+
+.historyTitle {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.historyMeta {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+/* お気に入りリスト */
+.favList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.favItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background var(--transition-speed) ease;
+}
+
+.favItem:hover {
+  background: var(--panel-border);
+}
+
+.folderIcon {
+  color: var(--accent-color);
+  flex-shrink: 0;
+}
+
+.fileIcon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.favName {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.favStarBtnActive {
+  background: transparent;
+  border: none;
+  color: #fbbf24;
+  cursor: pointer;
+  opacity: 0.8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.favStarBtnActive:hover {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+/* フォルダエクスプローラー */
+.explorer {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  min-width: 0;
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--panel-border);
+  margin-bottom: 16px;
+}
+
+.breadcrumbNode {
+  background: transparent;
+  border: none;
+  font-family: var(--font-family);
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all var(--transition-speed) ease;
+}
+
+.breadcrumbNode:hover {
+  background: var(--panel-border);
+  color: var(--text-primary);
+}
+
+.breadcrumbNode:last-child {
+  color: var(--text-primary);
+  font-weight: 600;
+  cursor: default;
+  background: transparent;
+}
+
+.separator {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.explorerBody {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.loadingArea, .errorArea, .emptyArea {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+  gap: 16px;
+}
+
+.loadingText, .errorText, .emptyArea p {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.emptyIcon {
+  color: var(--text-muted);
+}
+
+/* 本棚グリッド */
+.itemsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 18px;
+}
+
+.itemCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: pointer;
+  position: relative;
+  transition: transform var(--transition-speed) ease;
+}
+
+.itemCard:hover {
+  transform: translateY(-3px);
+}
+
+.itemThumbnailArea {
+  width: 100%;
+  aspect-ratio: 5 / 7;
+  border-radius: 10px;
+  overflow: hidden;
+  position: relative;
+  background: rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--panel-border);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+  transition: border-color var(--transition-speed) ease;
+}
+
+.itemCard:hover .itemThumbnailArea {
+  border-color: var(--accent-color);
+}
+
+.folderVisual, .fileVisual {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-color);
+}
+
+.fileVisual {
+  color: var(--text-muted);
+}
+
+.fileThumbnail {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.favStarBtn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: rgba(5, 4, 14, 0.65);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.6);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.9);
+  transition: all var(--transition-speed) ease;
+}
+
+.itemCard:hover .favStarBtn, .favActive {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.favActive {
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.3);
+  opacity: 1;
+}
+
+.itemDetail {
+  display: flex;
+  flex-direction: column;
+  padding: 0 2px;
+}
+
+.itemName {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-all;
+}
+
+.itemSize {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* メディアクエリ（レスポンシブ対応） */
+@media (max-width: 800px) {
+  .main {
+    flex-direction: column;
+  }
+  .sidebar {
+    width: 100%;
+  }
+  .itemsGrid {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 14px;
+  }
+  .container {
+    padding: 10px;
+    gap: 10px;
+  }
+  .explorer {
+    padding: 16px;
+  }
+}

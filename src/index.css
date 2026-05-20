@@ -1,0 +1,186 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;600;700&display=swap');
+
+:root {
+  /* タイポグラフィ */
+  --font-family: 'Outfit', 'Inter', system-ui, -apple-system, sans-serif;
+  
+  /* トランジション */
+  --transition-speed: 0.3s;
+  --transition-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  
+  /* ダークテーマ用カラー (デフォルト) */
+  --bg-gradient: radial-gradient(circle at 50% 0%, #161233 0%, #0d0a21 50%, #05040e 100%);
+  --panel-bg: rgba(22, 18, 51, 0.45);
+  --panel-bg-hover: rgba(22, 18, 51, 0.65);
+  --panel-border: rgba(255, 255, 255, 0.06);
+  --text-primary: #f5f4fa;
+  --text-secondary: #a3a1be;
+  --text-muted: #6b6988;
+  --accent-color: #a855f7;
+  --accent-glow: rgba(168, 85, 247, 0.35);
+  --accent-hover: #c084fc;
+  --danger-color: #ef4444;
+  --success-color: #10b981;
+  --card-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+  --blur-amount: 16px;
+  
+  /* 進捗バー等 */
+  --progress-bg: rgba(255, 255, 255, 0.1);
+  --progress-fill: linear-gradient(90deg, #a855f7, #ec4899);
+}
+
+[data-theme="light"] {
+  /* ライトテーマ用カラー */
+  --bg-gradient: radial-gradient(circle at 50% 0%, #f6f5fc 0%, #edeaf8 60%, #e2ddf3 100%);
+  --panel-bg: rgba(255, 255, 255, 0.6);
+  --panel-bg-hover: rgba(255, 255, 255, 0.85);
+  --panel-border: rgba(168, 85, 247, 0.15);
+  --text-primary: #1e1b4b;
+  --text-secondary: #636187;
+  --text-muted: #9492b4;
+  --accent-color: #8b5cf6;
+  --accent-glow: rgba(139, 92, 246, 0.2);
+  --accent-hover: #7c3aed;
+  --danger-color: #dc2626;
+  --success-color: #059669;
+  --card-shadow: 0 8px 32px 0 rgba(139, 92, 246, 0.06);
+  
+  --progress-bg: rgba(0, 0, 0, 0.05);
+  --progress-fill: linear-gradient(90deg, #8b5cf6, #d946ef);
+}
+
+/* リセットCSS & 基本設定 */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent; /* モバイルのタップハイライトを防止 */
+}
+
+body {
+  font-family: var(--font-family);
+  background: var(--bg-gradient);
+  background-attachment: fixed;
+  color: var(--text-primary);
+  min-height: 100vh;
+  min-height: -webkit-fill-available;
+  overflow-x: hidden;
+  transition: background var(--transition-speed) ease, color var(--transition-speed) ease;
+}
+
+html {
+  height: -webkit-fill-available;
+}
+
+/* スクロールバーのカスタマイズ */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--panel-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* 共通グラスモーフィズムパネル */
+.glass-panel {
+  background: var(--panel-bg);
+  backdrop-filter: blur(var(--blur-amount));
+  -webkit-backdrop-filter: blur(var(--blur-amount));
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  box-shadow: var(--card-shadow);
+  transition: background var(--transition-speed) ease, border var(--transition-speed) ease;
+}
+
+/* 押しやすいボタン共通 */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--accent-color);
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 12px;
+  font-family: var(--font-family);
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  box-shadow: 0 4px 14px 0 var(--accent-glow);
+  transition: all var(--transition-speed) var(--transition-bounce);
+}
+
+.btn-primary:hover {
+  background: var(--accent-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px 0 var(--accent-glow);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  color: var(--text-primary);
+  padding: 12px 24px;
+  border-radius: 12px;
+  font-family: var(--font-family);
+  font-weight: 500;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all var(--transition-speed) ease;
+}
+
+.btn-secondary:hover {
+  background: var(--panel-bg-hover);
+  border-color: var(--text-muted);
+}
+
+/* ローディングスピナー */
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--panel-border);
+  border-top-color: var(--accent-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ユーティリティ */
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
