@@ -51,6 +51,10 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
   const [spreadMode, setSpreadMode] = useState<SpreadMode>(() => {
     return (localStorage.getItem('viewer_spread') as SpreadMode) || 'double';
   });
+  // 見開き開始ページのズレ調整 (false: 奇数から開始, true: 偶数から開始)
+  const [isSpreadOffset, setIsSpreadOffset] = useState<boolean>(() => {
+    return localStorage.getItem('viewer_spread_offset') === 'true';
+  });
 
   // ズーム・パン用ステート（描画用）
   const [scale, setScale] = useState<number>(1);
@@ -112,6 +116,11 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
   const handleSpreadChange = (mode: SpreadMode) => {
     setSpreadMode(mode);
     localStorage.setItem('viewer_spread', mode);
+  };
+
+  const handleSpreadOffsetChange = (offset: boolean) => {
+    setIsSpreadOffset(offset);
+    localStorage.setItem('viewer_spread_offset', offset ? 'true' : 'false');
   };
 
   // 履歴保存
@@ -241,11 +250,22 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
     if (direction === 'vertical' || spreadMode === 'single' || !isLandscape) {
       return [currentPage];
     }
-    if (currentPage === 0) return [0];
-    if (currentPage % 2 === 1) {
-      return [currentPage, currentPage + 1].filter(p => p < totalLength);
+    
+    if (isSpreadOffset) {
+      // 偶数（表紙0を含む）からペアにする
+      if (currentPage % 2 === 0) {
+        return [currentPage, currentPage + 1].filter(p => p < totalLength);
+      } else {
+        return [currentPage - 1, currentPage].filter(p => p < totalLength);
+      }
     } else {
-      return [currentPage - 1, currentPage].filter(p => p < totalLength);
+      // 通常：0（表紙）は単独、1以降は奇数からペアにする
+      if (currentPage === 0) return [0];
+      if (currentPage % 2 === 1) {
+        return [currentPage, currentPage + 1].filter(p => p < totalLength);
+      } else {
+        return [currentPage - 1, currentPage].filter(p => p < totalLength);
+      }
     }
   };
 
@@ -253,21 +273,29 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
   const navigatePage = (action: 'next' | 'prev') => {
     if (totalLength === 0) return;
     let step = 1;
-    if (direction !== 'vertical' && spreadMode === 'double' && isLandscape && currentPage > 0) {
-      step = 2;
+    if (direction !== 'vertical' && spreadMode === 'double' && isLandscape) {
+      if (isSpreadOffset) {
+        step = 2;
+      } else {
+        if (currentPage > 0) {
+          step = 2;
+        }
+      }
     }
+    
     if (action === 'next') {
       setCurrentPage(prev => {
-        if (step === 2 && prev === 0) return 1;
+        if (step === 2 && !isSpreadOffset && prev === 0) return 1;
         return Math.min(prev + step, totalLength - 1);
       });
     } else {
       setCurrentPage(prev => {
-        if (step === 2 && prev === 1) return 0;
+        if (step === 2 && !isSpreadOffset && prev === 1) return 0;
         return Math.max(prev - step, 0);
       });
     }
   };
+
 
   // タップハンドラ（ズーム中はページ送り無効）
   const handleScreenTap = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -568,6 +596,26 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
                 onClick={() => handleSpreadChange('single')}
               >
                 1ページ固定
+              </button>
+            </div>
+          </div>
+        )}
+
+        {direction !== 'vertical' && spreadMode === 'double' && (
+          <div className={styles.settingGroup}>
+            <span className={styles.settingLabel}>見開きの左右ズレ調整</span>
+            <div className={styles.settingOptions}>
+              <button
+                className={`${styles.optionBtn} ${!isSpreadOffset ? styles.active : ''}`}
+                onClick={() => handleSpreadOffsetChange(false)}
+              >
+                調整なし (標準)
+              </button>
+              <button
+                className={`${styles.optionBtn} ${isSpreadOffset ? styles.active : ''}`}
+                onClick={() => handleSpreadOffsetChange(true)}
+              >
+                1ページずらす (補正ON)
               </button>
             </div>
           </div>
