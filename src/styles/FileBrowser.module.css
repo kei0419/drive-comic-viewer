@@ -266,10 +266,37 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 6px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--panel-border);
   margin-bottom: 16px;
+}
+
+.backFolderBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(168, 85, 247, 0.14);
+  border: 1px solid rgba(168, 85, 247, 0.28);
+  color: var(--text-primary);
+  font-family: var(--font-family);
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 6px 12px 6px 8px;
+  margin-right: 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  min-height: 34px;
+  transition: all var(--transition-speed) ease;
+}
+
+.backFolderBtn:hover {
+  background: rgba(168, 85, 247, 0.25);
+  border-color: var(--accent-color);
+}
+
+.backFolderBtn:active {
+  transform: scale(0.97);
 }
 
 .breadcrumbNode {

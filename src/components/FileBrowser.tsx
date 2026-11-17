@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Folder, FileArchive, Star, History, ChevronRight, 
+  Folder, FileArchive, Star, History, ChevronRight, ChevronLeft,
   LogOut, Settings, Sun, Moon, RefreshCw, BookOpen 
 } from 'lucide-react';
 import { 
@@ -154,6 +154,12 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
     onChangeFolder(nextPath[nextPath.length - 1].id, nextPath);
   };
 
+  const handleGoBack = () => {
+    if (path.length <= 1) return;
+    const nextPath = path.slice(0, -1);
+    onChangeFolder(nextPath[nextPath.length - 1].id, nextPath);
+  };
+
   // お気に入りトグル
   const handleToggleFavorite = async (e: React.MouseEvent, item: DriveItem | FavoriteItem, isFolder: boolean) => {
     e.stopPropagation();
@@ -287,6 +293,17 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
         <section className={`glass-panel ${styles.explorer}`}>
           {/* パンくずナビゲーション */}
           <div className={styles.breadcrumb}>
+            {path.length > 1 && (
+              <button
+                type="button"
+                className={styles.backFolderBtn}
+                onClick={handleGoBack}
+                aria-label="1つ前のフォルダに戻る"
+              >
+                <ChevronLeft size={16} />
+                <span>戻る</span>
+              </button>
+            )}
             {path.map((node, index) => (
               <React.Fragment key={node.id}>
                 {index > 0 && <ChevronRight size={14} className={styles.separator} />}
