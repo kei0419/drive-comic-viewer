@@ -4,17 +4,20 @@ import {
   LogOut, Settings, Sun, Moon, RefreshCw, BookOpen 
 } from 'lucide-react';
 import { 
-  listDriveContents, formatBytes 
+  listDriveContents, formatBytes, AuthExpiredError, loginGoogle 
 } from '../utils/googleDrive';
 import type { DriveItem } from '../utils/googleDrive';
 import { 
   getHistory, getFavorites, addFavorite, removeFavorite, 
   isFavorite, getThumbnail 
 } from '../utils/db';
-import type { ReadingHistory, FavoriteItem } from '../utils/db';
+import type { ReadingHistory, FavoriteItem, FavoritePathNode } from '../utils/db';
 import styles from '../styles/FileBrowser.module.css';
 
 interface FileBrowserProps {
+  currentFolderId: string;
+  path: FavoritePathNode[];
+  onChangeFolder: (folderId: string, nextPath: FavoritePathNode[]) => void;
   onLogout: () => void;
   onOpenSettings: () => void;
   onSelectComic: (fileId: string, name: string) => void;
@@ -22,24 +25,21 @@ interface FileBrowserProps {
   onChangeTheme: (theme: 'light' | 'dark') => void;
 }
 
-interface PathNode {
-  id: string;
-  name: string;
-}
-
 export const FileBrowser: React.FC<FileBrowserProps> = ({
+  currentFolderId,
+  path,
+  onChangeFolder,
   onLogout,
   onOpenSettings,
   onSelectComic,
   theme,
   onChangeTheme
 }) => {
-  const [currentFolderId, setCurrentFolderId] = useState<string>('root');
   const [items, setItems] = useState<DriveItem[]>([]);
-  const [path, setPath] = useState<PathNode[]>([{ id: 'root', name: 'マイドライブ' }]);
   
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [isAuthError, setIsAuthError] = useState<boolean>(false);
 
   // 履歴とお気に入り
   const [histories, setHistories] = useState<ReadingHistory[]>([]);
@@ -78,6 +78,7 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
   const loadContents = async (folderId: string) => {
     setLoading(true);
     setError(null);
+    setIsAuthError(false);
     try {
       const contents = await listDriveContents(folderId);
       setItems(contents);
@@ -96,10 +97,25 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
         if (thumb) thumbMap[item.id] = thumb;
       }
       setThumbnails(prev => ({ ...prev, ...thumbMap }));
-    } catch (err: any) {
-      setError(err.message || 'コンテンツの読み込みに失敗しました。');
+    } catch (err: unknown) {
+      if (err instanceof AuthExpiredError) {
+        setIsAuthError(true);
+        setError(err.message);
+      } else {
+        setIsAuthError(false);
+        setError(err instanceof Error ? err.message : 'コンテンツの読み込みに失敗しました。');
+      }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleReconnectAndRetry = async () => {
+    try {
+      await loginGoogle();
+      await loadContents(currentFolderId);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Googleドライブへの再接続に失敗しました。');
     }
   };
 
@@ -111,17 +127,31 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
   // フォルダ移動
   const handleFolderClick = async (folderId: string, folderName: string) => {
     const existingIndex = path.findIndex(node => node.id === folderId);
-    if (existingIndex !== -1) {
-      setPath(path.slice(0, existingIndex + 1));
-    } else {
-      setPath([...path, { id: folderId, name: folderName }]);
-    }
-    setCurrentFolderId(folderId);
+    const nextPath = existingIndex !== -1
+      ? path.slice(0, existingIndex + 1)
+      : [...path, { id: folderId, name: folderName }];
+    onChangeFolder(folderId, nextPath);
   };
 
-  const handleBreadcrumbClick = (node: PathNode, index: number) => {
-    setPath(path.slice(0, index + 1));
-    setCurrentFolderId(node.id);
+  // お気に入りフォルダへの移動（パンくずリストを破壊せず復元/リセットする）
+  const handleFavoriteFolderClick = (fav: FavoriteItem) => {
+    let nextPath: FavoritePathNode[];
+    if (fav.path && fav.path.length > 0) {
+      nextPath = fav.path;
+    } else if (fav.id === 'root') {
+      nextPath = [{ id: 'root', name: 'マイドライブ' }];
+    } else {
+      nextPath = [
+        { id: 'root', name: 'マイドライブ' },
+        { id: fav.id, name: fav.name }
+      ];
+    }
+    onChangeFolder(fav.id, nextPath);
+  };
+
+  const handleBreadcrumbClick = (_node: FavoritePathNode, index: number) => {
+    const nextPath = path.slice(0, index + 1);
+    onChangeFolder(nextPath[nextPath.length - 1].id, nextPath);
   };
 
   // お気に入りトグル
@@ -134,11 +164,19 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
       await removeFavorite(id);
       setFavoriteStatusMap(prev => ({ ...prev, [id]: false }));
     } else {
+      const existingPath = 'path' in item ? item.path : undefined;
+      const itemPath: FavoritePathNode[] = existingPath && existingPath.length > 0
+        ? existingPath
+        : isFolder
+          ? [...path, { id, name: item.name }]
+          : [...path];
+
       const favItem: FavoriteItem = {
         id,
         name: item.name,
         isFolder,
         parentId: currentFolderId,
+        path: itemPath,
         addedAt: Date.now()
       };
       await addFavorite(favItem);
@@ -227,7 +265,7 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
                   <div 
                     key={f.id} 
                     className={styles.favItem}
-                    onClick={() => f.isFolder ? handleFolderClick(f.id, f.name) : onSelectComic(f.id, f.name)}
+                    onClick={() => f.isFolder ? handleFavoriteFolderClick(f) : onSelectComic(f.id, f.name)}
                   >
                     {f.isFolder ? <Folder size={18} className={styles.folderIcon} /> : <FileArchive size={18} className={styles.fileIcon} />}
                     <span className={styles.favName}>{f.name}</span>
@@ -272,10 +310,17 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
             ) : error ? (
               <div className={styles.errorArea}>
                 <p className={styles.errorText}>{error}</p>
-                <button className="btn-primary" onClick={() => loadContents(currentFolderId)}>
-                  <RefreshCw size={16} />
-                  再試行
-                </button>
+                {isAuthError ? (
+                  <button className="btn-primary" onClick={handleReconnectAndRetry}>
+                    <RefreshCw size={16} />
+                    Googleドライブに再接続して再試行
+                  </button>
+                ) : (
+                  <button className="btn-primary" onClick={() => loadContents(currentFolderId)}>
+                    <RefreshCw size={16} />
+                    再試行
+                  </button>
+                )}
               </div>
             ) : items.length === 0 ? (
               <div className={styles.emptyArea}>

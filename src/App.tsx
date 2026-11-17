@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { getSettings, saveSettings } from './utils/db';
-import type { AppSettings } from './utils/db';
+import type { AppSettings, FavoritePathNode } from './utils/db';
 import { initGoogleAuth, loginGoogle, logoutGoogle } from './utils/googleDrive';
 import { AuthScreen } from './components/AuthScreen';
 import { FileBrowser } from './components/FileBrowser';
@@ -14,13 +14,16 @@ function App() {
   
   // 選択中の漫画
   const [activeComic, setActiveComic] = useState<{ id: string; name: string } | null>(null);
+
+  // 本棚の現在フォルダ階層（ビューワーから戻った際に元の階層を維持するためApp側で保持）
+  const [currentFolderId, setCurrentFolderId] = useState<string>('root');
+  const [folderPath, setFolderPath] = useState<FavoritePathNode[]>([{ id: 'root', name: 'マイドライブ' }]);
   
   // モーダル
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
 
   // 初期ロードと認証初期化
-  const loadAndInit = async () => {
-    setIsAuthLoading(true);
+  const loadAndInit = useCallback(async () => {
     try {
       const savedSettings = await getSettings();
       setSettings(savedSettings);
@@ -41,27 +44,31 @@ function App() {
     } finally {
       setIsAuthLoading(false);
     }
-  };
-
-  useEffect(() => {
-    loadAndInit();
   }, []);
 
-  const handleLogin = () => {
+  useEffect(() => {
+    void loadAndInit();
+  }, [loadAndInit]);
+
+  const handleLogin = async () => {
     try {
-      loginGoogle();
-    } catch (err: any) {
-      alert(err.message || 'ログイン中にエラーが発生しました。');
+      await loginGoogle();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'ログイン中にエラーが発生しました。';
+      alert(message);
     }
   };
 
   const handleLogout = () => {
     logoutGoogle();
     setIsAuthenticated(false);
+    setCurrentFolderId('root');
+    setFolderPath([{ id: 'root', name: 'マイドライブ' }]);
   };
 
   const handleSettingsSaved = () => {
-    loadAndInit();
+    setIsAuthLoading(true);
+    void loadAndInit();
   };
 
   const handleThemeChange = async (newTheme: 'light' | 'dark') => {
@@ -97,6 +104,12 @@ function App() {
     <>
       {isAuthenticated ? (
         <FileBrowser
+          currentFolderId={currentFolderId}
+          path={folderPath}
+          onChangeFolder={(folderId, nextPath) => {
+            setCurrentFolderId(folderId);
+            setFolderPath(nextPath);
+          }}
           onLogout={handleLogout}
           onOpenSettings={() => setIsSettingsOpen(true)}
           onSelectComic={(id, name) => setActiveComic({ id, name })}

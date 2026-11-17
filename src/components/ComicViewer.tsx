@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ChevronLeft, Sliders } from 'lucide-react';
-import { downloadFileWithProgress } from '../utils/googleDrive';
+import { ChevronLeft, Sliders, RefreshCw } from 'lucide-react';
+import { downloadFileWithProgress, AuthExpiredError, loginGoogle } from '../utils/googleDrive';
 import { decompressZip, decompressRar, revokeComicPages } from '../utils/decompress';
 import type { ComicPage } from '../utils/decompress';
 import { saveHistory, saveThumbnail, getThumbnail, historyStore, getCachedFile, cacheFile } from '../utils/db';
+import type { ReadingHistory } from '../utils/db';
 import styles from '../styles/ComicViewer.module.css';
 
 interface ComicViewerProps {
@@ -38,11 +39,24 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
   const [downloadProgress, setDownloadProgress] = useState<{ loaded: number; total: number }>({ loaded: 0, total: 0 });
   const [pages, setPages] = useState<ComicPage[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [isAuthError, setIsAuthError] = useState<boolean>(false);
+  const [reloadKey, setReloadKey] = useState<number>(0);
 
   // 閲覧用ステート
   const [currentPage, setCurrentPage] = useState<number>(0);
+  const currentPageRef = useRef<number>(0);
   const [showMenu, setShowMenu] = useState<boolean>(true);
   const [showSettings, setShowSettings] = useState<boolean>(false);
+
+  useEffect(() => {
+    currentPageRef.current = currentPage;
+  }, [currentPage]);
+
+  // 縦スクロール用Ref
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const pageRefs = useRef<(HTMLImageElement | null)[]>([]);
+  const isProgrammaticScrollRef = useRef<boolean>(false);
+  const scrollTimeoutRef = useRef<number | null>(null);
 
   // 閲覧設定
   const [direction, setDirection] = useState<ReadingDirection>(() => {
@@ -69,9 +83,13 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
   const panStartPoint = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const panStartOffset = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  // ダブルタップ検出用
+  // ダブルタップ検出・誤タップ防止用
   const lastTapTime = useRef<number>(0);
   const lastTapPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const singleTapTimerRef = useRef<number | null>(null);
+  const lastDoubleTapTimeRef = useRef<number>(0);
+  const lastPinchTimeRef = useRef<number>(0);
+  const didMoveOrPinchRef = useRef<boolean>(false);
 
   // スワイプ検出用（ズームなし時）
   const touchStartX = useRef<number>(0);
@@ -90,10 +108,31 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
     setPanOffset({ x: 0, y: 0 });
   }, []);
 
-  // ページが変わったらズームをリセット
+  // 縦スクロール時の指定ページジャンプ
+  const scrollToPage = useCallback((pageIndex: number) => {
+    const target = pageRefs.current[pageIndex];
+    if (!target) return;
+    isProgrammaticScrollRef.current = true;
+    target.scrollIntoView({ block: 'start' });
+    if (scrollTimeoutRef.current !== null) {
+      window.clearTimeout(scrollTimeoutRef.current);
+    }
+    scrollTimeoutRef.current = window.setTimeout(() => {
+      isProgrammaticScrollRef.current = false;
+    }, 150);
+  }, []);
+
+  // アンマウント時にタイマーを解放
   useEffect(() => {
-    resetZoom();
-  }, [currentPage, resetZoom]);
+    return () => {
+      if (singleTapTimerRef.current !== null) {
+        window.clearTimeout(singleTapTimerRef.current);
+      }
+      if (scrollTimeoutRef.current !== null) {
+        window.clearTimeout(scrollTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // 画面リサイズ検知
   useEffect(() => {
@@ -106,6 +145,7 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
 
   // 設定変更時の保存
   const handleDirectionChange = (dir: ReadingDirection) => {
+    resetZoom();
     setDirection(dir);
     localStorage.setItem('viewer_direction', dir);
     if (dir === 'vertical') {
@@ -124,10 +164,10 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
   };
 
   // 履歴保存
-  const saveReadingProgress = async (pageIndex: number, total: number) => {
+  const saveReadingProgress = useCallback(async (pageIndex: number, total: number) => {
     if (total <= 0) return;
     try {
-      const progress = (pageIndex / (total - 1)) * 100;
+      const progress = total === 1 ? 100 : (pageIndex / (total - 1)) * 100;
       await saveHistory({
         fileId,
         name: comicName,
@@ -139,10 +179,10 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
     } catch (err) {
       console.error('Failed to save reading history:', err);
     }
-  };
+  }, [fileId, comicName]);
 
   // サムネイル生成・キャッシュ
-  const generateAndCacheThumbnail = async (firstPageUrl: string) => {
+  const generateAndCacheThumbnail = useCallback(async (firstPageUrl: string) => {
     try {
       const cached = await getThumbnail(fileId);
       if (cached) return;
@@ -165,14 +205,17 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
     } catch (err) {
       console.error('Failed to generate thumbnail:', err);
     }
-  };
+  }, [fileId]);
 
   // 漫画データのダウンロードと解凍
   useEffect(() => {
     let activePages: ComicPage[] = [];
+    let isCancelled = false;
+
     const loadComic = async () => {
       try {
         setError(null);
+        setIsAuthError(false);
         let buffer: ArrayBuffer;
         const cachedBuffer = await getCachedFile(fileId);
 
@@ -182,10 +225,14 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
         } else {
           setLoadingStep('downloading');
           buffer = await downloadFileWithProgress(fileId, (loaded, total) => {
-            setDownloadProgress({ loaded, total });
+            if (!isCancelled) {
+              setDownloadProgress({ loaded, total });
+            }
           });
-          cacheFile(fileId, buffer);
+          await cacheFile(fileId, buffer);
         }
+
+        if (isCancelled) return;
 
         setLoadingStep('decompressing');
         const lowerName = comicName.toLowerCase();
@@ -203,45 +250,86 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
           }
         }
 
+        if (isCancelled) {
+          revokeComicPages(unzippedPages);
+          return;
+        }
+
         if (unzippedPages.length === 0) {
           throw new Error('解凍したファイル内に対応する画像が見つかりませんでした。');
         }
 
         activePages = unzippedPages;
+        pageRefs.current = [];
+
+        // 先に保存済み履歴を取得し、0ページ目で上書きしないようにする
+        const savedHist = await historyStore.getItem<ReadingHistory>(fileId);
+        const initialPage =
+          savedHist && savedHist.currentPage >= 0 && savedHist.currentPage < unzippedPages.length
+            ? savedHist.currentPage
+            : 0;
+
+        resetZoom();
+        currentPageRef.current = initialPage;
+        setCurrentPage(initialPage);
         setPages(unzippedPages);
         setLoadingStep('ready');
 
-        await saveReadingProgress(0, unzippedPages.length);
-        const savedHist: any = await historyStore.getItem(fileId);
-        if (savedHist && savedHist.currentPage < unzippedPages.length) {
-          setCurrentPage(savedHist.currentPage);
-        } else {
-          setCurrentPage(0);
-        }
+        await saveReadingProgress(initialPage, unzippedPages.length);
 
         if (unzippedPages.length > 0) {
-          generateAndCacheThumbnail(unzippedPages[0].url);
+          void generateAndCacheThumbnail(unzippedPages[0].url);
         }
-      } catch (err: any) {
-        setError(err.message || '漫画の読み込みに失敗しました。');
+      } catch (err: unknown) {
+        if (isCancelled) return;
+        if (err instanceof AuthExpiredError) {
+          setIsAuthError(true);
+          setError(err.message);
+        } else {
+          setIsAuthError(false);
+          setError(err instanceof Error ? err.message : '漫画の読み込みに失敗しました。');
+        }
       }
     };
 
-    loadComic();
+    void loadComic();
 
     return () => {
+      isCancelled = true;
       if (activePages.length > 0) {
         revokeComicPages(activePages);
       }
     };
-  }, [fileId]);
+  }, [fileId, comicName, reloadKey, resetZoom, saveReadingProgress, generateAndCacheThumbnail]);
 
-  // ページ保存トリガー
+  // ページ保存トリガー（ロード完了後のみ実行）
   useEffect(() => {
-    if (pages.length > 0) {
-      saveReadingProgress(currentPage, pages.length);
+    if (loadingStep === 'ready' && pages.length > 0) {
+      void saveReadingProgress(currentPage, pages.length);
     }
-  }, [currentPage, pages]);
+  }, [loadingStep, currentPage, pages.length, saveReadingProgress]);
+
+  // 縦スクロールモード表示時・切り替え時に現在ページへスクロール
+  useEffect(() => {
+    if (loadingStep === 'ready' && direction === 'vertical' && pages.length > 0) {
+      const frameId = requestAnimationFrame(() => {
+        scrollToPage(currentPageRef.current);
+      });
+      return () => cancelAnimationFrame(frameId);
+    }
+  }, [loadingStep, direction, pages.length, scrollToPage]);
+
+  const handleReconnectAndRetry = async () => {
+    try {
+      await loginGoogle();
+      setIsAuthError(false);
+      setError(null);
+      setLoadingStep('downloading');
+      setReloadKey(prev => prev + 1);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Googleドライブへの再接続に失敗しました。');
+    }
+  };
 
   const totalLength = pages.length;
 
@@ -251,7 +339,7 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
       return [currentPage];
     }
     
-    let currentSpread: number[] = [];
+    let currentSpread: number[];
     if (isSpreadOffset) {
       // 偶数（表紙0を含む）からペアにする
       if (currentPage % 2 === 0) {
@@ -279,6 +367,7 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
   // ページめくり
   const navigatePage = (action: 'next' | 'prev') => {
     if (totalLength === 0) return;
+    resetZoom();
     let step = 1;
     if (direction !== 'vertical' && spreadMode === 'double' && isLandscape) {
       if (isSpreadOffset) {
@@ -303,11 +392,51 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
     }
   };
 
+  // 縦スクロール時の現在ページ算出
+  const handleViewportScroll = () => {
+    if (direction !== 'vertical' || isProgrammaticScrollRef.current) return;
+    const viewport = viewportRef.current;
+    if (!viewport || pages.length === 0) return;
 
-  // タップハンドラ（ズーム中はページ送り無効）
+    const viewportRect = viewport.getBoundingClientRect();
+    const viewportCenterY = viewportRect.top + viewportRect.height / 2;
+
+    let closestIndex = currentPageRef.current;
+    let closestDistance = Infinity;
+
+    for (let i = 0; i < pages.length; i++) {
+      const el = pageRefs.current[i];
+      if (!el) continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.top <= viewportCenterY && rect.bottom >= viewportCenterY) {
+        closestIndex = i;
+        break;
+      }
+      const elCenterY = rect.top + rect.height / 2;
+      const dist = Math.abs(elCenterY - viewportCenterY);
+      if (dist < closestDistance) {
+        closestDistance = dist;
+        closestIndex = i;
+      }
+    }
+
+    if (closestIndex !== currentPageRef.current) {
+      currentPageRef.current = closestIndex;
+      setCurrentPage(closestIndex);
+    }
+  };
+
+  // タップハンドラ（ズーム中・ダブルタップ・ピンチ/スワイプ直後は無効、シングルタップは遅延実行）
   const handleScreenTap = (e: React.MouseEvent<HTMLDivElement>) => {
     if (showSettings) {
       setShowSettings(false);
+      return;
+    }
+    if (Date.now() - lastDoubleTapTimeRef.current < 400) {
+      return;
+    }
+    if (didMoveOrPinchRef.current) {
+      didMoveOrPinchRef.current = false;
       return;
     }
     // ズーム中はタップによるページ送りを無効化
@@ -317,18 +446,28 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
     const clickX = e.clientX;
     const sideWidth = width * 0.3;
 
-    if (direction === 'vertical') {
-      setShowMenu(prev => !prev);
-      return;
+    if (singleTapTimerRef.current !== null) {
+      window.clearTimeout(singleTapTimerRef.current);
     }
 
-    if (clickX < sideWidth) {
-      direction === 'rtl' ? navigatePage('next') : navigatePage('prev');
-    } else if (clickX > width - sideWidth) {
-      direction === 'rtl' ? navigatePage('prev') : navigatePage('next');
-    } else {
-      setShowMenu(prev => !prev);
-    }
+    singleTapTimerRef.current = window.setTimeout(() => {
+      singleTapTimerRef.current = null;
+      if (Date.now() - lastDoubleTapTimeRef.current < 400) return;
+      if (scaleRef.current > 1.05) return;
+
+      if (direction === 'vertical') {
+        setShowMenu(prev => !prev);
+        return;
+      }
+
+      if (clickX < sideWidth) {
+        navigatePage(direction === 'rtl' ? 'next' : 'prev');
+      } else if (clickX > width - sideWidth) {
+        navigatePage(direction === 'rtl' ? 'prev' : 'next');
+      } else {
+        setShowMenu(prev => !prev);
+      }
+    }, 260);
   };
 
   // === タッチイベント（ズーム・パン・スワイプ統合） ===
@@ -336,6 +475,12 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
     if (e.touches.length === 2) {
       // ピンチズーム開始
       isPinching.current = true;
+      lastPinchTimeRef.current = Date.now();
+      didMoveOrPinchRef.current = true;
+      if (singleTapTimerRef.current !== null) {
+        window.clearTimeout(singleTapTimerRef.current);
+        singleTapTimerRef.current = null;
+      }
       lastPinchDistance.current = getDistance(e.touches[0], e.touches[1]);
       lastPinchMidpoint.current = getMidpoint(e.touches[0], e.touches[1]);
     } else if (e.touches.length === 1) {
@@ -350,7 +495,14 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
       const dist = Math.sqrt(dx * dx + dy * dy);
 
       if (timeDiff < 300 && dist < 40) {
-        // ダブルタップ：ズームトグル
+        // ダブルタップ：遅延シングルタップを抑止してズームトグル
+        if (singleTapTimerRef.current !== null) {
+          window.clearTimeout(singleTapTimerRef.current);
+          singleTapTimerRef.current = null;
+        }
+        lastDoubleTapTimeRef.current = now;
+        didMoveOrPinchRef.current = true;
+
         if (scaleRef.current > 1.05) {
           resetZoom();
         } else {
@@ -368,6 +520,8 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
         lastTapTime.current = 0;
         return;
       }
+
+      didMoveOrPinchRef.current = false;
       lastTapTime.current = now;
       lastTapPos.current = { x: touch.clientX, y: touch.clientY };
 
@@ -383,8 +537,20 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
     if (e.touches.length === 2) {
       // ピンチズーム処理
       e.preventDefault();
+      lastPinchTimeRef.current = Date.now();
+      didMoveOrPinchRef.current = true;
+      if (singleTapTimerRef.current !== null) {
+        window.clearTimeout(singleTapTimerRef.current);
+        singleTapTimerRef.current = null;
+      }
+
       const newDistance = getDistance(e.touches[0], e.touches[1]);
       const newMidpoint = getMidpoint(e.touches[0], e.touches[1]);
+      if (lastPinchDistance.current <= 0) {
+        lastPinchDistance.current = newDistance;
+        lastPinchMidpoint.current = newMidpoint;
+        return;
+      }
 
       const distRatio = newDistance / lastPinchDistance.current;
       const newScale = Math.min(Math.max(scaleRef.current * distRatio, 1), 5);
@@ -402,28 +568,48 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
 
       lastPinchDistance.current = newDistance;
       lastPinchMidpoint.current = newMidpoint;
-    } else if (e.touches.length === 1 && scaleRef.current > 1.05) {
-      // ズーム中のパン
-      e.preventDefault();
+    } else if (e.touches.length === 1) {
       const touch = e.touches[0];
-      const dx = touch.clientX - panStartPoint.current.x;
-      const dy = touch.clientY - panStartPoint.current.y;
-      const newPanX = panStartOffset.current.x + dx;
-      const newPanY = panStartOffset.current.y + dy;
-      panOffsetRef.current = { x: newPanX, y: newPanY };
-      setPanOffset({ x: newPanX, y: newPanY });
+      const moveDist = Math.hypot(
+        touch.clientX - touchStartX.current,
+        touch.clientY - touchStartY.current
+      );
+      if (moveDist > 10) {
+        didMoveOrPinchRef.current = true;
+        if (singleTapTimerRef.current !== null) {
+          window.clearTimeout(singleTapTimerRef.current);
+          singleTapTimerRef.current = null;
+        }
+      }
+
+      if (scaleRef.current > 1.05) {
+        // ズーム中のパン
+        e.preventDefault();
+        const dx = touch.clientX - panStartPoint.current.x;
+        const dy = touch.clientY - panStartPoint.current.y;
+        const newPanX = panStartOffset.current.x + dx;
+        const newPanY = panStartOffset.current.y + dy;
+        panOffsetRef.current = { x: newPanX, y: newPanY };
+        setPanOffset({ x: newPanX, y: newPanY });
+      }
     }
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
     if (isPinching.current) {
-      isPinching.current = false;
-      // ズームが1以下になったらリセット
-      if (scaleRef.current <= 1.05) {
-        resetZoom();
+      lastPinchTimeRef.current = Date.now();
+      if (e.touches.length === 0) {
+        isPinching.current = false;
+        // ズームが1以下になったらリセット
+        if (scaleRef.current <= 1.05) {
+          resetZoom();
+        }
       }
       return;
     }
+
+    if (Date.now() - lastDoubleTapTimeRef.current < 400) return;
+    if (Date.now() - lastPinchTimeRef.current < 300) return;
 
     // ズーム中はスワイプによるページ送りを無効
     if (scaleRef.current > 1.05) return;
@@ -437,9 +623,9 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
     const threshold = 50;
     if (Math.abs(diffX) > threshold) {
       if (diffX > 0) {
-        direction === 'rtl' ? navigatePage('prev') : navigatePage('next');
+        navigatePage(direction === 'rtl' ? 'prev' : 'next');
       } else {
-        direction === 'rtl' ? navigatePage('next') : navigatePage('prev');
+        navigatePage(direction === 'rtl' ? 'next' : 'prev');
       }
     }
   };
@@ -465,6 +651,12 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
             <div className={styles.errorWrapper}>
               <p className={styles.errorText}>{error}</p>
               <div className={styles.errorActions}>
+                {isAuthError && (
+                  <button className="btn-primary" onClick={handleReconnectAndRetry}>
+                    <RefreshCw size={16} />
+                    Googleドライブに再接続して再試行
+                  </button>
+                )}
                 <button className="btn-secondary" onClick={onClose}>
                   本棚に戻る
                 </button>
@@ -492,6 +684,13 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
   }
 
   const visiblePages = getVisiblePages();
+  const visibleMin = visiblePages.length > 0 ? Math.min(...visiblePages) : currentPage;
+  const visibleMax = visiblePages.length > 0 ? Math.max(...visiblePages) : currentPage;
+  const preloadPages = direction !== 'vertical'
+    ? [visibleMin - 1, visibleMax + 1, visibleMax + 2].filter(
+        idx => idx >= 0 && idx < totalLength && !visiblePages.includes(idx)
+      )
+    : [];
 
   // ズーム変換スタイル
   const zoomTransform = (scale !== 1 || panOffset.x !== 0 || panOffset.y !== 0)
@@ -502,12 +701,14 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
     <div className={styles.container} data-viewer-theme="dark">
       {/* メインビューエリア */}
       <div
+        ref={viewportRef}
         className={`${styles.viewport} ${direction === 'vertical' ? styles.verticalMode : ''}`}
         onClick={handleScreenTap}
+        onScroll={handleViewportScroll}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
-        style={{ touchAction: scale > 1 ? 'none' : 'pan-y' }}
+        style={{ touchAction: direction !== 'vertical' ? 'none' : (scale > 1 ? 'none' : 'pan-y') }}
       >
         {direction === 'vertical' ? (
           // 縦スクロールモード
@@ -515,6 +716,7 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
             {pages.map((page, idx) => (
               <img
                 key={page.name}
+                ref={el => { pageRefs.current[idx] = el; }}
                 src={page.url}
                 alt={`Page ${idx + 1}`}
                 className={styles.scrollImage}
@@ -524,23 +726,36 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
           </div>
         ) : (
           // スライドモード（単一・見開き）
-          <div
-            className={styles.spreadWrapper}
-            style={zoomTransform
-              ? { transform: zoomTransform, transformOrigin: 'center center', willChange: 'transform' }
-              : undefined}
-          >
-            {visiblePages.map((pageIdx) => (
-              <div key={pages[pageIdx].name} className={styles.pageContainer}>
-                <img
-                  src={pages[pageIdx].url}
-                  alt={`Page ${pageIdx + 1}`}
-                  className={styles.pageImage}
-                  draggable={false}
-                />
+          <>
+            <div
+              className={styles.spreadWrapper}
+              style={zoomTransform
+                ? { transform: zoomTransform, transformOrigin: 'center center', willChange: 'transform' }
+                : undefined}
+            >
+              {visiblePages.map((pageIdx) => (
+                <div key={pages[pageIdx].name} className={styles.pageContainer}>
+                  <img
+                    src={pages[pageIdx].url}
+                    alt={`Page ${pageIdx + 1}`}
+                    className={styles.pageImage}
+                    draggable={false}
+                  />
+                </div>
+              ))}
+            </div>
+            {preloadPages.length > 0 && (
+              <div className={styles.preloadContainer} aria-hidden="true">
+                {preloadPages.map(pageIdx => (
+                  <img
+                    key={`preload-${pages[pageIdx].name}`}
+                    src={pages[pageIdx].url}
+                    alt=""
+                  />
+                ))}
               </div>
-            ))}
-          </div>
+            )}
+          </>
         )}
       </div>
 
@@ -642,7 +857,14 @@ export const ComicViewer: React.FC<ComicViewerProps> = ({
               min={0}
               max={totalLength - 1}
               value={currentPage}
-              onChange={e => setCurrentPage(parseInt(e.target.value, 10))}
+              onChange={e => {
+                const nextPage = parseInt(e.target.value, 10);
+                resetZoom();
+                setCurrentPage(nextPage);
+                if (direction === 'vertical') {
+                  requestAnimationFrame(() => scrollToPage(nextPage));
+                }
+              }}
               className={styles.seekBar}
               style={{ direction: direction === 'rtl' ? 'rtl' : 'ltr' }}
             />

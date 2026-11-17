@@ -1,5 +1,49 @@
+const TOKEN_STORAGE_KEY = 'gdrive_access_token';
+const TOKEN_EXPIRES_AT_KEY = 'gdrive_token_expires_at';
+const TOKEN_SAFETY_MARGIN_MS = 60 * 1000;
+
+interface GoogleTokenResponse {
+  access_token?: string;
+  expires_in?: number | string;
+  error?: string;
+  error_description?: string;
+}
+
+interface GoogleTokenClient {
+  requestAccessToken: (overrideConfig?: { prompt?: string }) => void;
+}
+
+interface GoogleOAuth2Namespace {
+  initTokenClient: (config: {
+    client_id: string;
+    scope: string;
+    callback: (response: GoogleTokenResponse) => void;
+    error_callback?: (error: { type?: string; message?: string }) => void;
+  }) => GoogleTokenClient;
+}
+
+declare global {
+  interface Window {
+    google?: {
+      accounts?: {
+        oauth2?: GoogleOAuth2Namespace;
+      };
+    };
+  }
+}
+
+export class AuthExpiredError extends Error {
+  constructor(message = 'セッションの期限が切れました。Googleドライブに再接続してください。') {
+    super(message);
+    this.name = 'AuthExpiredError';
+  }
+}
+
 let accessToken: string | null = null;
-let tokenClient: any = null;
+let tokenClient: GoogleTokenClient | null = null;
+let onTokenReceivedCallback: ((token: string) => void) | null = null;
+let pendingLoginResolve: ((token: string) => void) | null = null;
+let pendingLoginReject: ((error: Error) => void) | null = null;
 
 export interface DriveItem {
   id: string;
@@ -9,32 +53,125 @@ export interface DriveItem {
   thumbnailLink?: string;
 }
 
+const saveTokenToStorage = (token: string, expiresInSeconds?: number | string) => {
+  const parsedExpiresIn = typeof expiresInSeconds === 'string'
+    ? parseInt(expiresInSeconds, 10)
+    : expiresInSeconds;
+  const ttlSeconds = parsedExpiresIn && !isNaN(parsedExpiresIn) ? parsedExpiresIn : 3599;
+  const expiresAt = Date.now() + ttlSeconds * 1000;
+  try {
+    localStorage.setItem(TOKEN_STORAGE_KEY, token);
+    localStorage.setItem(TOKEN_EXPIRES_AT_KEY, String(expiresAt));
+  } catch (err) {
+    console.warn('アクセストークンの保存に失敗しました:', err);
+  }
+};
+
+const clearStoredToken = () => {
+  accessToken = null;
+  try {
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
+    localStorage.removeItem(TOKEN_EXPIRES_AT_KEY);
+  } catch (err) {
+    console.warn('アクセストークンの削除に失敗しました:', err);
+  }
+};
+
+const loadValidTokenFromStorage = (): string | null => {
+  try {
+    const token = localStorage.getItem(TOKEN_STORAGE_KEY);
+    const expiresAtStr = localStorage.getItem(TOKEN_EXPIRES_AT_KEY);
+    if (!token || !expiresAtStr) {
+      return null;
+    }
+    const expiresAt = parseInt(expiresAtStr, 10);
+    if (isNaN(expiresAt) || Date.now() >= expiresAt - TOKEN_SAFETY_MARGIN_MS) {
+      clearStoredToken();
+      return null;
+    }
+    return token;
+  } catch {
+    return null;
+  }
+};
+
+const ensureValidAccessToken = (): string => {
+  if (accessToken) {
+    try {
+      const expiresAtStr = localStorage.getItem(TOKEN_EXPIRES_AT_KEY);
+      if (expiresAtStr) {
+        const expiresAt = parseInt(expiresAtStr, 10);
+        if (!isNaN(expiresAt) && Date.now() >= expiresAt - TOKEN_SAFETY_MARGIN_MS) {
+          clearStoredToken();
+          throw new AuthExpiredError();
+        }
+      }
+    } catch (err) {
+      if (err instanceof AuthExpiredError) throw err;
+    }
+    return accessToken;
+  }
+
+  const restoredToken = loadValidTokenFromStorage();
+  if (restoredToken) {
+    accessToken = restoredToken;
+    return restoredToken;
+  }
+
+  throw new AuthExpiredError('認証されていません。Googleドライブに接続してください。');
+};
+
 /**
  * Google GIS SDK を初期化する
  */
 export const initGoogleAuth = (clientId: string, onTokenReceived: (token: string) => void): Promise<void> => {
+  onTokenReceivedCallback = onTokenReceived;
+
+  const restoredToken = loadValidTokenFromStorage();
+  if (restoredToken) {
+    accessToken = restoredToken;
+    onTokenReceived(restoredToken);
+  }
+
   return new Promise((resolve, reject) => {
     if (!clientId) {
       reject(new Error('Google Client ID が設定されていません。'));
       return;
     }
-    
+
     const checkGoogleLoaded = () => {
-      // @ts-ignore
-      if (window.google && window.google.accounts && window.google.accounts.oauth2) {
+      const oauth2 = window.google?.accounts?.oauth2;
+      if (oauth2) {
         try {
-          // @ts-ignore
-          tokenClient = window.google.accounts.oauth2.initTokenClient({
+          tokenClient = oauth2.initTokenClient({
             client_id: clientId,
             scope: 'https://www.googleapis.com/auth/drive.readonly',
-            callback: (response: any) => {
-              if (response.error) {
+            callback: (response: GoogleTokenResponse) => {
+              if (response.error || !response.access_token) {
                 console.error('Google Auth callback error:', response);
-                reject(response);
+                const errorMsg = response.error_description || response.error || 'Google認証に失敗しました。';
+                if (pendingLoginReject) {
+                  pendingLoginReject(new Error(errorMsg));
+                  pendingLoginResolve = null;
+                  pendingLoginReject = null;
+                }
               } else {
                 accessToken = response.access_token;
-                onTokenReceived(response.access_token);
-                resolve();
+                saveTokenToStorage(response.access_token, response.expires_in);
+                onTokenReceivedCallback?.(response.access_token);
+                if (pendingLoginResolve) {
+                  pendingLoginResolve(response.access_token);
+                  pendingLoginResolve = null;
+                  pendingLoginReject = null;
+                }
+              }
+            },
+            error_callback: (err) => {
+              console.error('Google Auth popup/error callback:', err);
+              if (pendingLoginReject) {
+                pendingLoginReject(new Error(err.message || '認証がキャンセルされたか、ポップアップがブロックされました。'));
+                pendingLoginResolve = null;
+                pendingLoginReject = null;
               }
             },
           });
@@ -46,7 +183,7 @@ export const initGoogleAuth = (clientId: string, onTokenReceived: (token: string
         setTimeout(checkGoogleLoaded, 100);
       }
     };
-    
+
     checkGoogleLoaded();
   });
 };
@@ -54,20 +191,36 @@ export const initGoogleAuth = (clientId: string, onTokenReceived: (token: string
 /**
  * Googleアカウントログインをリクエストする
  */
-export const loginGoogle = () => {
-  if (tokenClient) {
-    // 期限切れ対策のために再承認を要求
-    tokenClient.requestAccessToken({ prompt: '' });
-  } else {
-    throw new Error('Google Auth SDK が初期化されていません。Settings画面でClient IDを保存してください。');
+export const loginGoogle = (): Promise<string> => {
+  if (!tokenClient) {
+    return Promise.reject(new Error('Google Auth SDK が初期化されていません。設定画面でClient IDを保存してください。'));
   }
+
+  if (pendingLoginReject) {
+    pendingLoginReject(new Error('新しい認証リクエストによって中断されました。'));
+    pendingLoginResolve = null;
+    pendingLoginReject = null;
+  }
+
+  return new Promise((resolve, reject) => {
+    pendingLoginResolve = resolve;
+    pendingLoginReject = reject;
+    try {
+      // 期限切れ対策のために再承認を要求
+      tokenClient!.requestAccessToken({ prompt: '' });
+    } catch (err) {
+      pendingLoginResolve = null;
+      pendingLoginReject = null;
+      reject(err instanceof Error ? err : new Error('認証リクエストの開始に失敗しました。'));
+    }
+  });
 };
 
 /**
  * ログアウトする
  */
 export const logoutGoogle = () => {
-  accessToken = null;
+  clearStoredToken();
 };
 
 export const getAccessToken = () => accessToken;
@@ -76,20 +229,18 @@ export const getAccessToken = () => accessToken;
  * Google Drive API への共通リクエストヘルパー
  */
 const fetchFromDrive = async (url: string, options: RequestInit = {}) => {
-  if (!accessToken) {
-    throw new Error('認証されていません。Googleドライブに再接続してください。');
-  }
+  const token = ensureValidAccessToken();
 
   const headers = new Headers(options.headers || {});
-  headers.set('Authorization', `Bearer ${accessToken}`);
+  headers.set('Authorization', `Bearer ${token}`);
 
   const response = await fetch(url, { ...options, headers });
-  
+
   if (response.status === 401) {
-    accessToken = null;
-    throw new Error('セッションの期限が切れました。ログインし直してください。');
+    clearStoredToken();
+    throw new AuthExpiredError('セッションの期限が切れました。Googleドライブに再接続してください。');
   }
-  
+
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     throw new Error(errorData.error?.message || `Google Drive API エラー: ${response.statusText}`);
@@ -171,22 +322,20 @@ export const downloadFileWithProgress = async (
   fileId: string,
   onProgress: (loaded: number, total: number) => void
 ): Promise<ArrayBuffer> => {
-  if (!accessToken) {
-    throw new Error('認証トークンがありません。ログインしてください。');
-  }
+  const token = ensureValidAccessToken();
 
   const url = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
-  
+
   const response = await fetch(url, {
     headers: {
-      Authorization: `Bearer ${accessToken}`
+      Authorization: `Bearer ${token}`
     }
   });
 
   if (!response.ok) {
     if (response.status === 401) {
-      accessToken = null;
-      throw new Error('セッションの期限が切れました。ログインし直してください。');
+      clearStoredToken();
+      throw new AuthExpiredError('セッションの期限が切れました。Googleドライブに再接続してください。');
     }
     const errorText = await response.text();
     throw new Error(`ダウンロードエラー (${response.status}): ${errorText || response.statusText}`);

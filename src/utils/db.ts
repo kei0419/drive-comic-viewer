@@ -9,11 +9,17 @@ export interface ReadingHistory {
   updatedAt: number;
 }
 
+export interface FavoritePathNode {
+  id: string;
+  name: string;
+}
+
 export interface FavoriteItem {
   id: string;
   name: string;
   isFolder: boolean;
   parentId?: string;
+  path?: FavoritePathNode[];
   addedAt: number;
 }
 
@@ -112,19 +118,121 @@ export const fileCacheStore = localforage.createInstance({
   storeName: 'fileCache'
 });
 
+export const fileCacheMetaStore = localforage.createInstance({
+  name: 'CloudComicReader',
+  storeName: 'fileCacheMeta'
+});
+
+export interface FileCacheMeta {
+  fileId: string;
+  byteLength: number;
+  lastAccessedAt: number;
+}
+
+const MAX_CACHED_FILES = 10;
+
+const syncCacheMetadata = async (): Promise<FileCacheMeta[]> => {
+  const [cacheKeys, metaKeys] = await Promise.all([
+    fileCacheStore.keys(),
+    fileCacheMetaStore.keys()
+  ]);
+
+  const cacheKeySet = new Set(cacheKeys);
+  const metaMap = new Map<string, FileCacheMeta>();
+
+  for (const key of metaKeys) {
+    if (!cacheKeySet.has(key)) {
+      await fileCacheMetaStore.removeItem(key);
+      continue;
+    }
+    const meta = await fileCacheMetaStore.getItem<FileCacheMeta>(key);
+    if (meta) {
+      metaMap.set(key, meta);
+    }
+  }
+
+  for (const key of cacheKeys) {
+    if (!metaMap.has(key)) {
+      const data = await fileCacheStore.getItem<ArrayBuffer>(key);
+      if (data) {
+        const meta: FileCacheMeta = {
+          fileId: key,
+          byteLength: data.byteLength,
+          lastAccessedAt: Date.now()
+        };
+        await fileCacheMetaStore.setItem(key, meta);
+        metaMap.set(key, meta);
+      }
+    }
+  }
+
+  return Array.from(metaMap.values()).sort((a, b) => a.lastAccessedAt - b.lastAccessedAt);
+};
+
+const evictCacheEntry = async (fileId: string): Promise<void> => {
+  await Promise.all([
+    fileCacheStore.removeItem(fileId),
+    fileCacheMetaStore.removeItem(fileId)
+  ]);
+};
+
 export const getCachedFile = async (fileId: string): Promise<ArrayBuffer | null> => {
-  return await fileCacheStore.getItem<ArrayBuffer>(fileId);
+  const data = await fileCacheStore.getItem<ArrayBuffer>(fileId);
+  if (data) {
+    await fileCacheMetaStore.setItem<FileCacheMeta>(fileId, {
+      fileId,
+      byteLength: data.byteLength,
+      lastAccessedAt: Date.now()
+    });
+  }
+  return data;
 };
 
 export const cacheFile = async (fileId: string, data: ArrayBuffer): Promise<void> => {
   try {
-    await fileCacheStore.setItem(fileId, data);
+    const metas = (await syncCacheMetadata()).filter((meta) => meta.fileId !== fileId);
+
+    while (metas.length >= MAX_CACHED_FILES) {
+      const oldest = metas.shift();
+      if (!oldest) break;
+      await evictCacheEntry(oldest.fileId);
+    }
+
+    while (true) {
+      try {
+        await fileCacheStore.setItem(fileId, data);
+        await fileCacheMetaStore.setItem<FileCacheMeta>(fileId, {
+          fileId,
+          byteLength: data.byteLength,
+          lastAccessedAt: Date.now()
+        });
+        return;
+      } catch (err) {
+        const oldest = metas.shift();
+        if (!oldest) {
+          throw err;
+        }
+        await evictCacheEntry(oldest.fileId);
+      }
+    }
   } catch (err) {
     // ストレージ容量超過時はキャッシュを諦める（動作には影響なし）
     console.warn('ファイルキャッシュの保存に失敗しました（容量不足の可能性）:', err);
   }
 };
 
+export const getFileCacheStats = async (): Promise<{ count: number; totalBytes: number }> => {
+  const metas = await syncCacheMetadata();
+  const totalBytes = metas.reduce((sum, meta) => sum + meta.byteLength, 0);
+  return {
+    count: metas.length,
+    totalBytes
+  };
+};
+
 export const clearFileCache = async (): Promise<void> => {
-  await fileCacheStore.clear();
+  await Promise.all([
+    fileCacheStore.clear(),
+    fileCacheMetaStore.clear()
+  ]);
 };

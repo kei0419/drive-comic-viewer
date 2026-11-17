@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, Sun, Moon, Info, RefreshCw } from 'lucide-react';
-import { getSettings, saveSettings } from '../utils/db';
+import { X, Save, Sun, Moon, Info, RefreshCw, Trash2 } from 'lucide-react';
+import { getSettings, saveSettings, getFileCacheStats, clearFileCache } from '../utils/db';
 import styles from '../styles/SettingsModal.module.css';
 
 interface SettingsModalProps {
@@ -17,12 +17,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [clientId, setClientId] = useState('');
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isClearingCache, setIsClearingCache] = useState(false);
+  const [cacheStats, setCacheStats] = useState<{ count: number; totalBytes: number }>({
+    count: 0,
+    totalBytes: 0
+  });
 
   useEffect(() => {
     if (isOpen) {
       getSettings().then(settings => {
         setClientId(settings.clientId);
         setTheme(settings.theme);
+      });
+      getFileCacheStats().then(setCacheStats).catch(err => {
+        console.error('Failed to get cache stats:', err);
       });
     }
   }, [isOpen]);
@@ -66,6 +74,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       console.error('Failed to update app:', err);
       alert('更新に失敗しました。時間をおいて再度お試しください。');
       setIsUpdating(false);
+    }
+  };
+
+  const handleClearComicCache = async () => {
+    if (!window.confirm(`ダウンロード済みのマンガキャッシュ（${cacheStats.count}冊 / ${(cacheStats.totalBytes / 1024 / 1024).toFixed(1)} MB）を削除しますか？\n(読書履歴とお気に入りは残ります)`)) {
+      return;
+    }
+
+    setIsClearingCache(true);
+    try {
+      await clearFileCache();
+      const updatedStats = await getFileCacheStats();
+      setCacheStats(updatedStats);
+    } catch (err) {
+      console.error('Failed to clear comic cache:', err);
+      alert('マンガキャッシュの削除に失敗しました。');
+    } finally {
+      setIsClearingCache(false);
     }
   };
 
@@ -127,6 +153,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           <div className={styles.formGroup} style={{ marginTop: '12px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '20px' }}>
             <label className={styles.label}>システム管理</label>
+            <button
+              type="button"
+              className="btn-secondary"
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px' }}
+              onClick={handleClearComicCache}
+              disabled={isClearingCache || cacheStats.count === 0}
+            >
+              <Trash2 size={16} />
+              {isClearingCache
+                ? 'キャッシュを削除中...'
+                : `ダウンロード済みマンガのキャッシュを削除 (${cacheStats.count}冊 / ${(cacheStats.totalBytes / 1024 / 1024).toFixed(1)} MB)`}
+            </button>
             <button
               type="button"
               className="btn-secondary"
